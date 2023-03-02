@@ -107,6 +107,7 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
                              mpMap, mpKeyFrameDatabase, strSettingsFile, mSensor);
 
     //Initialize the Local Mapping thread and launch
+    //linkzw: 局部建图使用object
     mpLocalMapper = new LocalMapping(mpMap, mSensor==MONOCULAR, use_objects_in_local_BA);
     mptLocalMapping = new thread(&ORB_SLAM2::LocalMapping::Run,mpLocalMapper);
 
@@ -128,7 +129,7 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
         mptViewer = new thread(&Viewer::Run, mpViewer);
         mpTracker->SetViewer(mpViewer);
     }
-
+    //增加了个AR模块
     mpARViewer = nullptr;
     mptARViewer = nullptr;
     if (bUseARViewer)

@@ -289,7 +289,9 @@ cv::Mat Tracking::GrabImageRGBD(const cv::Mat &imRGB,const cv::Mat &imD, const d
 cv::Mat Tracking::GrabImageMonocular(const cv::Mat &im, const double &timestamp,
                                      const std::vector<Detection::Ptr>& detections, bool force_relocalize)
 {
+    //帧记数
     current_frame_idx_ = (current_frame_idx_ + 1) % (std::numeric_limits<size_t>::max()-1);
+    
     mImGray = im;
     im.copyTo(im_rgb_);
 
@@ -315,6 +317,7 @@ cv::Mat Tracking::GrabImageMonocular(const cv::Mat &im, const double &timestamp,
 
     current_frame_detections_ = detections;
     current_frame_good_detections_.clear();
+    //筛选合格检测
     for (auto det : current_frame_detections_) {
         if (det->score > 0.5) {
             // if (det->category_id != 73 && det->score > 0.5 ||  det->score > 0.7) { // for table scene to ignore book on the nappe
@@ -322,6 +325,7 @@ cv::Mat Tracking::GrabImageMonocular(const cv::Mat &im, const double &timestamp,
         }
     }
 
+    //是否重定位
     if (force_relocalize)
     {
         auto t1 = high_resolution_clock::now();
@@ -403,17 +407,21 @@ cv::Mat Tracking::GrabImageMonocular(const cv::Mat &im, const double &timestamp,
                     kf = nullptr;
 
 
-                // pre-compute all the projections of all ellipsoids which already reconstructed
+                
+                //预先计算已经重建的所有椭圆体的所有投影
                 Matrix34d Rt = cvToEigenMatrix<double, float, 3, 4>(mCurrentFrame.mTcw);
                 Matrix34d P;
+                //投影矩阵
                 P = K_ * Rt;
                 std::unordered_map<ObjectTrack::Ptr, BBox2> proj_bboxes;
                 for (auto tr: objectTracks_) {
                     if (tr->GetStatus() == ObjectTrackStatus::INITIALIZED ||
                         tr->GetStatus() == ObjectTrackStatus::IN_MAP) {
+                        // 提取椭球尺寸 位姿 2dbbox 投影椭圆
                         MapObject* obj = tr->GetMapObject();
                         Eigen::Vector3d c = obj->GetEllipsoid().GetCenter();
                         double z = Rt.row(2).dot(c.homogeneous());
+                        //计算投影椭圆
                         auto ell = obj->GetEllipsoid().project(P);
                         BBox2 bb = ell.ComputeBbox();
                         if (bboxes_intersection(bb, img_bbox) < 0.3 * bbox_area(bb)) {
@@ -421,7 +429,8 @@ cv::Mat Tracking::GrabImageMonocular(const cv::Mat &im, const double &timestamp,
                         }
                         proj_bboxes[tr] = ell.ComputeBbox();
 
-                        // Check occlusions and keep only the nearest
+                        
+                        // 检查2dbbox之间的遮挡并只保留最近的
                         std::unordered_set<ObjectTrack::Ptr> hidden;
                         for (auto it : proj_bboxes) {
                             if (it.first != tr && bboxes_iou(it.second, bb) > 0.9) {
@@ -446,7 +455,9 @@ cv::Mat Tracking::GrabImageMonocular(const cv::Mat &im, const double &timestamp,
                 // find possible tracks
                 std::vector<ObjectTrack::Ptr> possible_tracks;
                 for (auto tr : objectTracks_) {
+                    //获取上一个观测的bbox
                     auto bb = tr->GetLastBbox();
+                    // 两次观测间隔在30次内，且两次观测面积差距不大
                     if (tr->GetLastObsFrameId() + 30 >= current_frame_idx_ &&
                         bboxes_intersection(bb, img_bbox) >= 0.3 * bbox_area(bb)) {
                         possible_tracks.push_back(tr);
@@ -456,6 +467,7 @@ cv::Mat Tracking::GrabImageMonocular(const cv::Mat &im, const double &timestamp,
                 }
 
                 // Associated map points to each detection
+                // 关联地图点
                 std::vector<std::unordered_set<MapPoint*>> assoc_map_points(current_frame_good_detections_.size());
                 for (size_t i = 0; i < current_frame_good_detections_.size(); ++i) {
                     for (size_t j = 0; j < mCurrentFrame.mvKeysUn.size(); ++j) {
@@ -469,7 +481,7 @@ cv::Mat Tracking::GrabImageMonocular(const cv::Mat &im, const double &timestamp,
                     }
                 }
 
-                // Try to match detections to existing object track based on the associated map points
+                // 尝试根据关联的地图点将检测与现有对象跟踪相匹配
                 int THRESHOLD_NB_MATCH = 10;
                 std::vector<int> matched_by_points(current_frame_good_detections_.size(), -1);
                 std::vector<std::vector<size_t>> nb_matched_points(current_frame_good_detections_.size(), std::vector<size_t>());
@@ -479,6 +491,7 @@ cv::Mat Tracking::GrabImageMonocular(const cv::Mat &im, const double &timestamp,
                     size_t best_matched_track = 0;
                     for (size_t j = 0; j < possible_tracks.size(); ++j) {
                         auto tr_map_points = possible_tracks[j]->GetAssociatedMapPoints();
+                        //计算地图点的对应数
                         size_t n = count_set_map_intersection(assoc_map_points[i], tr_map_points);
                         if (n > max_nb_matches) {
                             max_nb_matches = n;
@@ -648,6 +661,7 @@ void Tracking::RemoveTrack(ObjectTrack::Ptr track)
 void Tracking::Track()
 {
     createdNewKeyFrame_ = false;
+
     if(mState==NO_IMAGES_YET)
     {
         mState = NOT_INITIALIZED;
@@ -706,6 +720,7 @@ void Tracking::Track()
             }
             else
             {
+                //重定位
                 if (mpSystem->GetRelocalizationMode() == RELOC_POINTS) {
                     std::cout << "Relocalize with points.\n";
                     bOK = Relocalization();
@@ -728,6 +743,7 @@ void Tracking::Track()
         }
         else
         {
+            // 定位模式
             // Localization Mode: Local Mapping is deactivated
             // std::cout << "Tracking: Mapping is disabled \n";
             if(mState==LOST)
